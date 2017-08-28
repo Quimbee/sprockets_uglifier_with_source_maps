@@ -1,10 +1,9 @@
-require 'sprockets/digest_utils'
-require 'sprockets/uglifier_compressor'
+require "sprockets/digest_utils"
+require "sprockets/uglifier_compressor"
 
 module SprocketsUglifierWithSM
   class Compressor < Sprockets::UglifierCompressor
-
-    DEFAULTS = { comments: false }
+    DEFAULTS = { comments: false }.freeze
 
     def initialize(options = {})
       @options = DEFAULTS.merge(Rails.application.config.assets.uglifier.to_h).merge!(options)
@@ -22,28 +21,22 @@ module SprocketsUglifierWithSM
       sourcemap = JSON.parse(sourcemap_json)
 
       if Rails.application.config.assets.sourcemaps_embed_source
-        sourcemap['sourcesContent'] = [data]
-      else
-        uncompressed_filename = File.join(Rails.application.config.assets.prefix, Rails.application.config.assets.uncompressed_prefix, "#{name}-#{digest(data)}.js")
-        uncompressed_path     = File.join(Rails.public_path, uncompressed_filename)
-        uncompressed_url      = filename_to_url(uncompressed_filename)
-
-        FileUtils.mkdir_p File.dirname(uncompressed_path)
-        File.open(uncompressed_path, 'w') { |f| f.write data }
-        gzip_file(uncompressed_path) if gzip?
-
-        sourcemap['sources'] = [uncompressed_url]
+        sourcemap["sourcesContent"] = [data]
       end
-      sourcemap['file'] = "#{name}.js"
 
-      sourcemap_json     = sourcemap.to_json
-      sourcemap_filename = File.join(Rails.application.config.assets.prefix, Rails.application.config.assets.sourcemaps_prefix, "#{name}-#{digest(sourcemap_json)}.js.map")
-      sourcemap_path     = File.join(Rails.public_path, sourcemap_filename)
-      sourcemap_url      = filename_to_url(sourcemap_filename)
+      uncompressed_path, uncompressed_url = get_file_data(name, digest(data))
 
-      FileUtils.mkdir_p File.dirname(sourcemap_path)
-      File.open(sourcemap_path, 'w') { |f| f.write sourcemap_json }
-      gzip_file(sourcemap_path) if gzip?
+      generate_file(data, uncompressed_path)
+
+      sourcemap["sources"] = [uncompressed_url]
+
+      sourcemap["file"] = "#{name}.js"
+
+      sourcemap_json = sourcemap.to_json
+
+      sourcemap_path, sourcemap_url = get_file_data(name, digest(sourcemap_json), true)
+
+      generate_file(sourcemap_json, sourcemap_path)
 
       compressed_data.concat "\n//# sourceMappingURL=#{sourcemap_url}\n"
     end
@@ -77,6 +70,22 @@ module SprocketsUglifierWithSM
 
     def digest(io)
       Sprockets::DigestUtils.pack_hexdigest Sprockets::DigestUtils.digest(io)
+    end
+
+    def get_file_data(name, suffix, map = false)
+      prefix = map ? Rails.application.config.assets.sourcemaps_prefix : Rails.application.config.assets.uncompressed_prefix
+      ext = map ? ".js.map" : ".js"
+      uncompressed_filename = File.join(Rails.application.config.assets.prefix, prefix.to_s, "#{name}-#{suffix}#{ext}")
+      uncompressed_path     = File.join(Rails.public_path, uncompressed_filename)
+      uncompressed_url      = filename_to_url(uncompressed_filename)
+
+      [uncompressed_path, uncompressed_url]
+    end
+
+    def generate_file(content, path)
+      FileUtils.mkdir_p File.dirname(path)
+      File.open(path, "w") { |f| f.write content }
+      gzip_file(path) if gzip?
     end
   end
 end
